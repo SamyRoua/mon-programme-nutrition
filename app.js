@@ -1,5 +1,5 @@
-const defaults={profile:{weight:61.2,height:165,age:46,activity:1.55,deficit:20},macros:{A:[30,40,30],B:[30,45,25],C:[35,20,45]},week:{Lundi:'A',Mardi:'B',Mercredi:'A',Jeudi:'B',Vendredi:'A',Samedi:'C',Dimanche:'C'},weekOverrides:{},consumed:{},measures:[],customRecipes:[],appearance:{accent:'#7c5c8f'}};
-let state=JSON.parse(localStorage.getItem('nutritionPWA')||'null')||structuredClone(defaults);state.appearance??=structuredClone(defaults.appearance);const save=()=>localStorage.setItem('nutritionPWA',JSON.stringify(state));
+const defaults={profile:{weight:61.2,height:165,age:46,activity:1.55,deficit:20},macros:{A:[30,40,30],B:[30,45,25],C:[35,20,45]},week:{Lundi:'A',Mardi:'B',Mercredi:'A',Jeudi:'B',Vendredi:'A',Samedi:'C',Dimanche:'C'},weekOverrides:{},consumed:{},measures:[],customRecipes:[],appearance:{accent:'#7c5c8f'},recipePortions:{}};
+let state=JSON.parse(localStorage.getItem('nutritionPWA')||'null')||structuredClone(defaults);state.appearance??=structuredClone(defaults.appearance);state.recipePortions??={};const save=()=>localStorage.setItem('nutritionPWA',JSON.stringify(state));
 function hexToRgb(hex){let h=hex.replace('#','');if(h.length===3)h=h.split('').map(x=>x+x).join('');let n=parseInt(h,16);return[(n>>16)&255,(n>>8)&255,n&255]}
 function applyTheme(color=state.appearance.accent){state.appearance.accent=color;let [r,g,b]=hexToRgb(color);document.documentElement.style.setProperty('--accent',color);document.documentElement.style.setProperty('--soft',`rgba(${r},${g},${b},.16)`);document.getElementById('themeMeta')?.setAttribute('content',color);if(document.getElementById('customColor'))customColor.value=color;document.querySelectorAll('[data-color]').forEach(x=>x.classList.toggle('selected',x.dataset.color.toLowerCase()===color.toLowerCase()))}
 applyTheme();
@@ -35,7 +35,13 @@ const adjustableRecipes={
 };
 function nutrient(i,g){let q=g/100;return{kcal:i.k*q,p:i.p*q,c:i.c*q,f:i.f*q}}
 function sumIngredients(items,grams){return items.reduce((a,i,j)=>{let n=nutrient(i,grams[j]);for(let k of ['kcal','p','c','f'])a[k]+=n[k];return a},{kcal:0,p:0,c:0,f:0})}
-function recipeItems(r){return r.customItems?.length?r.customItems:adjustableRecipes[r.name]}
+function recipeItems(r){
+  const base=r.customItems?.length?r.customItems:adjustableRecipes[r.name];
+  if(!base?.length)return base;
+  const saved=state.recipePortions?.[r.name];
+  if(!saved?.length)return base.map(i=>({...i}));
+  return base.map((i,j)=>({...i,g:Number.isFinite(+saved[j])?Math.max(0,+saved[j]):i.g}));
+}
 // V5.3 : une seule source de vérité pour les recettes structurées : ingrédients × grammes.
 // Les kcal et macros affichées sont recalculées à chaque chargement, jamais reprises d'un total saisi à la main.
 function syncRecipeNutrition(){for(const r of recipes){const items=recipeItems(r);if(!items?.length)continue;const t=sumIngredients(items,items.map(i=>i.g));r.kcal=t.kcal;r.p=t.p;r.c=t.c;r.f=t.f;r.ingredients=items.map(i=>`${fmt(i.g)} g ${i.n}`).join(' · ')}}
@@ -117,7 +123,26 @@ window.planRecipe=(meal,name)=>{let r=[...recipes,...state.customRecipes].find(x
 window.editPlanned=meal=>{let p=plannedFor(meal);if(!p?.items?.length){alert('Cette ancienne recette ne possède pas encore les ingrédients structurés.');return}modal(`<h3>${p.name}</h3><p class="muted">Modifie directement les grammes. Les calories et macros se recalculent automatiquement.</p><div id="portionRows">${p.items.map((i,j)=>`<label class="editIngredient"><span>${i.n}</span><input type="number" min="0" step="1" value="${fmt(i.g)}" data-j="${j}"> g</label>`).join('')}</div><div id="portionTotal" class="kcalNote"></div><div class="modalActions"><button>Annuler</button><button type="button" class="primary compact" id="savePortion">Enregistrer</button></div>`);let temp=p.items.map(i=>({...i}));let update=()=>{let t=sumIngredients(temp,temp.map(i=>+i.g||0));portionTotal.innerHTML=`<b>${fmt(t.kcal)} kcal</b> · P ${fmt(t.p,1)} g · G ${fmt(t.c,1)} g · L ${fmt(t.f,1)} g`;return t};portionRows.querySelectorAll('input').forEach(el=>el.oninput=()=>{temp[+el.dataset.j].g=Math.max(0,+el.value||0);update()});update();savePortion.onclick=()=>{let t=update();state.planned[key()][meal]={...p,items:temp,...t};save();document.getElementById('modal').close();renderToday()}}
 window.eatPlanned=meal=>{let p=plannedFor(meal);state.consumed[key()]??=[];state.consumed[key()].push({name:p.name,kcal:p.kcal,p:p.p,c:p.c,f:p.f});save();renderToday()};window.removePlanned=meal=>{delete state.planned[key()][meal];save();renderToday()};window.removeConsumed=i=>{state.consumed[key()].splice(i,1);save();renderToday()}
 function renderRecipes(filter='all'){let all=[...recipes,...state.customRecipes];recipeList.innerHTML=all.filter(r=>filter==='all'||r.cat===filter).map(r=>`<div class="recipe"><div class="row"><div><b>${r.name}</b><small>${r.cat}</small></div></div><div>${r.ingredients}</div><div class="facts">${fmt(r.kcal)} kcal · P ${fmt(r.p,1)} g · G ${fmt(r.c,1)} g · L ${fmt(r.f,1)} g</div><button type="button" onclick='previewRecipe(${JSON.stringify(r.name)})'>Voir / modifier les quantités</button></div>`).join('')}
-window.previewRecipe=name=>{let r=[...recipes,...state.customRecipes].find(x=>x.name===name),items=recipeItems(r);if(!items){modal(`<h3>${r.name}</h3><p>${r.ingredients}</p><p>${fmt(r.kcal)} kcal · P ${fmt(r.p,1)} · G ${fmt(r.c,1)} · L ${fmt(r.f,1)}</p><div class="modalActions"><button>Fermer</button></div>`);return}let temp=items.map(i=>({...i}));modal(`<h3>${r.name}</h3><p class="muted">Teste les quantités ici. Pour planifier cette version, ouvre la date et choisis la recette dans le repas.</p><div id="portionRows">${temp.map((i,j)=>`<label class="editIngredient"><span>${i.n}</span><input type="number" min="0" step="1" value="${i.g}" data-j="${j}"> g</label>`).join('')}</div><div id="portionTotal" class="kcalNote"></div><div class="modalActions"><button>Fermer</button></div>`);let update=()=>{let t=sumIngredients(temp,temp.map(i=>i.g));portionTotal.innerHTML=`<b>${fmt(t.kcal)} kcal</b> · P ${fmt(t.p,1)} g · G ${fmt(t.c,1)} g · L ${fmt(t.f,1)} g`};portionRows.querySelectorAll('input').forEach(el=>el.oninput=()=>{temp[+el.dataset.j].g=Math.max(0,+el.value||0);update()});update()}
+window.previewRecipe=name=>{
+  let r=[...recipes,...state.customRecipes].find(x=>x.name===name),items=recipeItems(r);
+  if(!items){modal(`<h3>${r.name}</h3><p>${r.ingredients}</p><p>${fmt(r.kcal)} kcal · P ${fmt(r.p,1)} · G ${fmt(r.c,1)} · L ${fmt(r.f,1)}</p><div class="modalActions"><button>Fermer</button></div>`);return}
+  let temp=items.map(i=>({...i}));
+  modal(`<h3>${r.name}</h3><p class="muted">Modifie les grammes puis appuie sur <b>Enregistrer les quantités</b>. Elles seront conservées à la prochaine ouverture.</p><div id="portionRows">${temp.map((i,j)=>`<label class="editIngredient"><span>${i.n}</span><input type="number" min="0" step="1" value="${i.g}" data-j="${j}"> g</label>`).join('')}</div><div id="portionTotal" class="kcalNote"></div><div class="modalActions"><button type="button" id="cancelPreview">Fermer sans enregistrer</button><button type="button" class="primary compact" id="saveRecipePortion">Enregistrer les quantités</button></div>`);
+  const rows=document.getElementById('portionRows'), total=document.getElementById('portionTotal');
+  let update=()=>{let t=sumIngredients(temp,temp.map(i=>i.g));total.innerHTML=`<b>${fmt(t.kcal)} kcal</b> · P ${fmt(t.p,1)} g · G ${fmt(t.c,1)} g · L ${fmt(t.f,1)} g`;return t};
+  rows.querySelectorAll('input').forEach(el=>el.addEventListener('input',()=>{temp[+el.dataset.j].g=Math.max(0,+el.value||0);update()}));
+  update();
+  document.getElementById('cancelPreview').addEventListener('click',()=>document.getElementById('modal').close());
+  document.getElementById('saveRecipePortion').addEventListener('click',()=>{
+    state.recipePortions[r.name]=temp.map(i=>+i.g||0);
+    const t=update();
+    r.kcal=t.kcal;r.p=t.p;r.c=t.c;r.f=t.f;r.ingredients=temp.map(i=>`${fmt(i.g)} g ${i.n}`).join(' · ');
+    save();
+    document.getElementById('modal').close();
+    renderRecipes(document.querySelector('.filter.on')?.dataset.filter||'all');
+    renderToday();
+  });
+}
 // Le changement A/B/C porte maintenant sur la date affichée.
 changeToday.onclick=()=>modal(`<h3>Type de journée</h3><p>Ce changement concerne <b>${dateTitle()}</b> uniquement.</p><div class="modalActions">${['A','B','C'].map(x=>`<button type="button" onclick="setToday('${x}')">${x}</button>`).join('')}<button>Annuler</button></div>`);window.setToday=x=>{state.weekOverrides[key()]=x;save();document.getElementById('modal').close();renderToday()}
 // Ajout manuel sur la date sélectionnée.
