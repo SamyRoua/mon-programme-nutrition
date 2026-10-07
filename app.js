@@ -28,11 +28,18 @@ const adjustableRecipes={
 'Yaourt grec, kiwi & noix':[{n:'Yaourt grec',g:180,min:120,max:300,k:73,p:9.5,c:3.9,f:2},{n:'Kiwi',g:100,min:70,max:180,k:61,p:1.1,c:14.7,f:.5},{n:'Noix',g:15,min:5,max:25,k:654,p:15,c:14,f:65}],
 'Cabillaud, patate douce & haricots verts':[{n:'Cabillaud',g:170,min:120,max:240,k:82,p:18,c:0,f:.7},{n:'Patate douce',g:220,min:130,max:340,k:86,p:1.6,c:20,f:.1},{n:'Haricots verts',g:200,min:150,max:350,k:31,p:1.8,c:7,f:.2},{n:'Huile d’olive',g:7,min:3,max:14,k:884,p:0,c:0,f:100}],
 'Omelette légumes & feta':[{n:'Œufs',g:150,min:100,max:200,k:143,p:12.6,c:.7,f:9.5},{n:'Légumes',g:250,min:180,max:400,k:30,p:1.5,c:5,f:.3},{n:'Feta',g:45,min:20,max:70,k:265,p:14,c:4,f:21},{n:'Huile d’olive',g:5,min:2,max:10,k:884,p:0,c:0,f:100}],
-'Crevettes, riz & légumes':[{n:'Crevettes',g:180,min:120,max:250,k:99,p:24,c:.2,f:.3},{n:'Riz cru',g:65,min:35,max:105,k:360,p:7,c:79,f:.7},{n:'Légumes',g:250,min:180,max:400,k:30,p:1.5,c:5,f:.3},{n:'Huile d’olive',g:6,min:2,max:12,k:884,p:0,c:0,f:100}]
+'Crevettes, riz & légumes':[{n:'Crevettes',g:180,min:120,max:250,k:99,p:24,c:.2,f:.3},{n:'Riz cru',g:65,min:35,max:105,k:360,p:7,c:79,f:.7},{n:'Légumes',g:250,min:180,max:400,k:30,p:1.5,c:5,f:.3},{n:'Huile d’olive',g:6,min:2,max:12,k:884,p:0,c:0,f:100}],
+'Tartines ricotta & saumon':[{n:'Pain complet',g:80,min:40,max:120,k:247,p:13,c:41,f:4.2},{n:'Ricotta',g:70,min:35,max:110,k:174,p:11.3,c:3,f:13},{n:'Saumon fumé',g:70,min:40,max:110,k:117,p:18.3,c:0,f:4.3},{n:'Concombre',g:100,min:60,max:200,k:15,p:.7,c:3.6,f:.1}],
+'Boule énergie cacao-amande':[{n:'Dattes',g:14,min:8,max:22,k:282,p:2.5,c:75,f:.4},{n:'Amandes',g:9,min:5,max:15,k:579,p:21.2,c:21.6,f:49.9},{n:'Cacao pur',g:2,min:1,max:5,k:228,p:19.6,c:57.9,f:13.7}],
+'Boule énergie coco-cacahuète':[{n:'Dattes',g:13,min:7,max:20,k:282,p:2.5,c:75,f:.4},{n:'Cacahuètes',g:9,min:5,max:15,k:567,p:25.8,c:16.1,f:49.2},{n:'Noix de coco râpée',g:3,min:1,max:6,k:660,p:6.9,c:23.7,f:64.5}]
 };
 function nutrient(i,g){let q=g/100;return{kcal:i.k*q,p:i.p*q,c:i.c*q,f:i.f*q}}
 function sumIngredients(items,grams){return items.reduce((a,i,j)=>{let n=nutrient(i,grams[j]);for(let k of ['kcal','p','c','f'])a[k]+=n[k];return a},{kcal:0,p:0,c:0,f:0})}
 function recipeItems(r){return r.customItems?.length?r.customItems:adjustableRecipes[r.name]}
+// V5.3 : une seule source de vérité pour les recettes structurées : ingrédients × grammes.
+// Les kcal et macros affichées sont recalculées à chaque chargement, jamais reprises d'un total saisi à la main.
+function syncRecipeNutrition(){for(const r of recipes){const items=recipeItems(r);if(!items?.length)continue;const t=sumIngredients(items,items.map(i=>i.g));r.kcal=t.kcal;r.p=t.p;r.c=t.c;r.f=t.f;r.ingredients=items.map(i=>`${fmt(i.g)} g ${i.n}`).join(' · ')}}
+syncRecipeNutrition();
 function fitRecipe(r,goal){let items=recipeItems(r);if(!items)return null;let grams=items.map(i=>i.g), keys=['kcal','p','c','f'];let scales={kcal:Math.max(150,goal.kcal),p:Math.max(15,goal.p),c:Math.max(20,goal.c),f:Math.max(8,goal.f)};function score(gs){let x=sumIngredients(items,gs);return keys.reduce((z,k)=>z+Math.pow((x[k]-goal[k])/scales[k],2),0)}let best=score(grams);for(let pass=0;pass<12;pass++){for(let j=0;j<items.length;j++){let cur=grams[j],candidate=cur;for(let g=items[j].min;g<=items[j].max;g+=5){let test=[...grams];test[j]=g;let sc=score(test);if(sc<best){best=sc;candidate=g}}grams[j]=candidate}}return{items:items.map((i,j)=>({...i,g:grams[j]})),...sumIngredients(items,grams),score:best}}
 function remaining(){let t=target(typeToday()),u=totals();return{kcal:Math.max(0,t.kcal-u.kcal),p:Math.max(0,t.p-u.p),c:Math.max(0,t.c-u.c),f:Math.max(0,t.f-u.f)}}
 function mealGoal(meal){let rem=remaining(),idx=mealOrder.indexOf(meal),left=mealOrder.slice(Math.max(0,idx)),den=left.reduce((a,m)=>a+mealSplit[m],0)||1,w=mealSplit[meal]/den;return{kcal:rem.kcal*w,p:rem.p*w,c:rem.c*w,f:rem.f*w}}
