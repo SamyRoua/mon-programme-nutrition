@@ -162,7 +162,7 @@ mealSplit['Petit-déjeuner']=.25; mealSplit['Déjeuner']=.35; mealSplit['Collati
 state.recipeEdits??={};
 
 // Bibliothèque alimentaire intégrée (valeurs moyennes pour 100 g).
-const foodLibrary=[
+const fallbackFoodLibrary=[
 ['Poulet',165,31,0,3.6],['Dinde',135,29,0,1.6],['Bœuf maigre',170,26,0,7],['Steak haché 5%',137,21.4,0,5],['Jambon blanc',116,20,1,3.5],
 ['Saumon',208,20,0,13],['Cabillaud',82,18,0,.7],['Thon au naturel',116,26,0,1],['Crevettes',99,24,.2,.3],['Saumon fumé',117,18.3,0,4.3],
 ['Œufs',143,12.6,.7,9.5],['Skyr',63,11,4,.2],['Yaourt grec',73,9.5,3.9,2],['Fromage blanc 3%',75,8,4,3],['Cottage cheese',98,11.1,3.4,4.3],['Ricotta',174,11.3,3,13],['Feta',265,14,4,21],['Chèvre frais',250,15,3,20],['Parmesan',431,38,4,29],
@@ -172,9 +172,41 @@ const foodLibrary=[
 ['Avocat',160,2,8.5,14.7],['Pomme',52,.3,14,.2],['Poire',57,.4,15,.1],['Banane',89,1.1,22.8,.3],['Kiwi',61,1.1,14.7,.5],['Mangue',60,.8,15,.4],['Framboises',52,1.2,12,.7],['Fruits rouges',45,1,8,.5],
 ['Amandes',579,21.2,21.6,49.9],['Noix',654,15,14,65],['Cacahuètes',567,25.8,16.1,49.2],['Beurre de cacahuète',588,25,20,50],['Graines de chia',486,16.5,42.1,30.7],['Noix de coco râpée',660,6.9,23.7,64.5],['Dattes',282,2.5,75,.4],['Cacao pur',228,19.6,57.9,13.7],
 ['Huile d’olive',884,0,0,100],['Miel',304,0,82.4,0],['Lait demi-écrémé',46,3.4,4.8,1.6],['Lait de coco léger',70,.7,2.5,6.5]
-].map(a=>({n:a[0],k:a[1],p:a[2],c:a[3],f:a[4]}));
-function allFoods(){let map=new Map(foodLibrary.map(x=>[x.n.toLowerCase(),x]));for(const x of state.foods||[]){let n=x.name||x.n;if(n&&!map.has(n.toLowerCase()))map.set(n.toLowerCase(),{n,k:+x.k||0,p:+x.p||0,c:+x.c||0,f:+x.f||0})}return [...map.values()].sort((a,b)=>a.n.localeCompare(b.n,'fr'))}
-function replacementSelect(i,j,scope){let opts=allFoods().map(f=>`<option value="${f.n.replace(/"/g,'&quot;')}" ${f.n===i.n?'selected':''}>${f.n}</option>`).join('');return `<div class="replaceIngredient"><label>Aliment<select data-food-j="${j}" data-scope="${scope}">${opts}</select></label><label>Grammes<input type="number" min="0" step="1" value="${fmt(i.g)}" data-gram-j="${j}"></label></div>`}
+].map(a=>({n:a[0],k:a[1],p:a[2],c:a[3],f:a[4],source:'Complément'}));
+
+// V5.6 : CIQUAL 2025 (ANSES) devient la source principale.
+const ciqualLibrary=(typeof CIQUAL_FOODS!=='undefined'?CIQUAL_FOODS:[]).map(a=>({n:a[0],k:a[1],p:a[2],c:a[3],f:a[4],code:a[5],source:'CIQUAL 2025'}));
+const CIQUAL_ALIAS={
+'Poulet':'Poulet, viande crue',
+'Dinde':'Dinde, viande rôtie/cuite au four',
+'Bœuf maigre':'Boeuf, steak ou bifteck grillé/poêlé',
+'Steak haché 5%':'Boeuf, steak haché 5% MG cuit',
+'Saumon':'Saumon, cuit, sans précision (aliment moyen)',
+'Cabillaud':'Cabillaud, cuit, sans précision (aliment moyen)',
+'Ricotta':'Ricotta','Parmesan':'Parmesan',
+'Riz cru':'Riz blanc, cru','Quinoa cru':'Quinoa, cru',
+'Pommes de terre':'Pomme de terre, cuite (aliment moyen)',
+'Pain complet':'Pain complet ou intégral (à la farine T150)',
+'Houmous':'Houmous, préemballé','Courgettes':'Courgette, chair et peau, cuite',
+'Haricots verts':'Haricot vert, cuit','Concombre':'Concombre, chair et peau, cru',
+'Poivrons':'Poivron, vert, jaune ou rouge, cru','Carottes':'Carotte, crue','Aubergine':'Aubergine, crue',
+'Avocat':'Avocat, chair sans peau, sans noyau, cru','Kiwi':'Kiwi, chair sans peau, avec pépins, cru',
+'Mangue':'Mangue, chair sans peau, sans noyau, crue','Framboises':'Framboise, crue',
+'Fruits rouges':'Fruits rouges, crus (framboises, fraises, groseilles, cassis)',
+'Amandes':'Amande, avec peau, sans sel ajouté','Cacahuètes':'Cacahuète, sans sel ajouté',
+'Beurre de cacahuète':"Beurre de cacahuète ou pâte d'arachide",'Graines de chia':'Chia, graine, séchée',
+'Noix de coco râpée':'Noix de coco, chair, sèche','Dattes':'Datte, chair et peau, sans noyau, sèche',
+'Cacao pur':'Cacao, sans sucres ajoutés, poudre soluble','Miel':'Miel','Lait demi-écrémé':'Lait demi-écrémé (aliment moyen)'
+};
+function ciqualForFriendly(name){let exact=CIQUAL_ALIAS[name];return exact?ciqualLibrary.find(x=>x.n===exact):null}
+const foodLibrary=fallbackFoodLibrary.map(x=>{let q=ciqualForFriendly(x.n);return q?{...x,k:q.k,p:q.p,c:q.c,f:q.f,source:q.source,code:q.code}:x});
+// Met à jour aussi les ingrédients des recettes existantes avec les valeurs CIQUAL disponibles.
+for(const items of Object.values(adjustableRecipes)){for(const i of items){let q=ciqualForFriendly(i.n);if(q){i.k=q.k;i.p=q.p;i.c=q.c;i.f=q.f;i.source='CIQUAL 2025';i.code=q.code}}}
+syncRecipeNutrition();
+function allFoods(){let map=new Map(ciqualLibrary.map(x=>[x.n.toLowerCase(),x]));for(const x of foodLibrary)map.set(x.n.toLowerCase(),x);for(const x of state.foods||[]){let n=x.name||x.n;if(n&&!map.has(n.toLowerCase()))map.set(n.toLowerCase(),{n,k:+x.k||0,p:+x.p||0,c:+x.c||0,f:+x.f||0,source:'Personnel'})}return [...map.values()].sort((a,b)=>a.n.localeCompare(b.n,'fr'))}
+function refreshSavedIngredientNutrition(){let foods=allFoods(),byName=new Map(foods.map(x=>[x.n.toLowerCase(),x]));let refresh=items=>items?.map(i=>{let q=byName.get(String(i.n||'').toLowerCase());return q?{...i,k:q.k,p:q.p,c:q.c,f:q.f,source:q.source,code:q.code}:i});for(const n of Object.keys(state.recipeEdits||{}))state.recipeEdits[n]=refresh(state.recipeEdits[n]);for(const d of Object.keys(state.planned||{}))for(const m of Object.keys(state.planned[d]||{})){let x=state.planned[d][m];if(!x?.items?.length)continue;x.items=refresh(x.items);let t=sumIngredients(x.items,x.items.map(i=>+i.g||0));Object.assign(x,t)}save()}
+refreshSavedIngredientNutrition();
+function replacementSelect(i,j,scope){let opts=allFoods().map(f=>`<option value="${f.n.replace(/"/g,'&quot;')}" ${f.n===i.n?'selected':''}>${f.n}${f.source==='CIQUAL 2025'?' · CIQUAL':''}</option>`).join('');return `<div class="replaceIngredient"><label>Aliment<select data-food-j="${j}" data-scope="${scope}">${opts}</select></label><label>Grammes<input type="number" min="0" step="1" value="${fmt(i.g)}" data-gram-j="${j}"></label></div>`}
 function replaceItemFromFood(item,name){let f=allFoods().find(x=>x.n===name);return f?{...item,n:f.n,k:f.k,p:f.p,c:f.c,f:f.f}:item}
 
 // Les recettes éditées (aliment + grammes) deviennent la source de vérité.
@@ -214,5 +246,15 @@ function renderToday(){let t=target(typeToday()),u=totals(),d=parseISO(key()),is
 window.editPlanned=meal=>{let p=plannedFor(meal);if(!p?.items?.length){alert('Cette ancienne recette ne possède pas encore les ingrédients structurés.');return}let temp=p.items.map(i=>({...i}));modal(`<h3>${p.name}</h3><p class="muted">Tu peux remplacer un aliment ou modifier ses grammes. Tout est recalculé automatiquement.</p><div id="portionRows">${temp.map((i,j)=>replacementSelect(i,j,'planned')).join('')}</div><div id="portionTotal" class="kcalNote"></div><div class="modalActions"><button>Annuler</button><button type="button" class="primary compact" id="savePortion">Enregistrer</button></div>`);let update=()=>{let t=sumIngredients(temp,temp.map(i=>+i.g||0));portionTotal.innerHTML=`<b>${fmt(t.kcal)} kcal</b> · P ${fmt(t.p,1)} g · G ${fmt(t.c,1)} g · L ${fmt(t.f,1)} g`;return t};portionRows.querySelectorAll('[data-food-j]').forEach(el=>el.onchange=()=>{let j=+el.dataset.foodJ;temp[j]=replaceItemFromFood(temp[j],el.value);update()});portionRows.querySelectorAll('[data-gram-j]').forEach(el=>el.oninput=()=>{temp[+el.dataset.gramJ].g=Math.max(0,+el.value||0);update()});update();savePortion.onclick=()=>{let t=update();state.planned[key()][meal]={...p,items:temp,...t};save();document.getElementById('modal').close();renderToday()}}
 
 window.previewRecipe=name=>{let r=[...recipes,...state.customRecipes].find(x=>x.name===name),items=recipeItems(r);if(!items){modal(`<h3>${r.name}</h3><p>${r.ingredients}</p><p>${fmt(r.kcal)} kcal · P ${fmt(r.p,1)} · G ${fmt(r.c,1)} · L ${fmt(r.f,1)}</p><div class="modalActions"><button>Fermer</button></div>`);return}let temp=items.map(i=>({...i}));modal(`<h3>${r.name}</h3><p class="muted">Remplace un aliment si tu veux, ajuste les grammes, puis enregistre. Les kcal et macros suivent automatiquement.</p><div id="portionRows">${temp.map((i,j)=>replacementSelect(i,j,'recipe')).join('')}</div><div id="portionTotal" class="kcalNote"></div><div class="modalActions"><button type="button" id="cancelPreview">Fermer sans enregistrer</button><button type="button" class="primary compact" id="saveRecipePortion">Enregistrer la recette</button></div>`);let update=()=>{let t=sumIngredients(temp,temp.map(i=>+i.g||0));portionTotal.innerHTML=`<b>${fmt(t.kcal)} kcal</b> · P ${fmt(t.p,1)} g · G ${fmt(t.c,1)} g · L ${fmt(t.f,1)} g`;return t};portionRows.querySelectorAll('[data-food-j]').forEach(el=>el.onchange=()=>{let j=+el.dataset.foodJ;temp[j]=replaceItemFromFood(temp[j],el.value);update()});portionRows.querySelectorAll('[data-gram-j]').forEach(el=>el.oninput=()=>{temp[+el.dataset.gramJ].g=Math.max(0,+el.value||0);update()});update();cancelPreview.onclick=()=>document.getElementById('modal').close();saveRecipePortion.onclick=()=>{let t=update();state.recipeEdits[r.name]=temp.map(i=>({...i}));state.recipePortions[r.name]=temp.map(i=>+i.g||0);r.kcal=t.kcal;r.p=t.p;r.c=t.c;r.f=t.f;r.ingredients=temp.map(i=>`${fmt(i.g)} g ${i.n}`).join(' · ');save();document.getElementById('modal').close();renderRecipes(document.querySelector('.chips .on')?.dataset.filter||'all');renderToday()}}
+
+// ===== Version 5.6 : historique nutritionnel figé par date =====
+state.dailyTargets??={};
+function calculateTargetFor(type,profile=state.profile){let k=(447.593+9.247*profile.weight+3.098*profile.height-4.33*profile.age)*profile.activity*(1-profile.deficit/100),m=state.macros[type];return{kcal:k,p:k*m[0]/100/4,c:k*m[1]/100/4,f:k*m[2]/100/9,weight:profile.weight,activity:profile.activity,deficit:profile.deficit,type}}
+function freezePastTargets(){let today=localISO(),dates=new Set([...Object.keys(state.consumed||{}),...Object.keys(state.planned||{}),...Object.keys(state.weekOverrides||{})]);for(const d of dates){if(d>=today||state.dailyTargets[d])continue;let old=selectedDate;selectedDate=d;let ty=state.weekOverrides[d]||state.week[dayName(parseISO(d))]||'A';state.dailyTargets[d]=calculateTargetFor(ty);selectedDate=old}save()}
+freezePastTargets();
+function target(type){let d=key();if(d<localISO()&&state.dailyTargets?.[d]){let x=state.dailyTargets[d];return{kcal:x.kcal,p:x.p,c:x.c,f:x.f}}return calculateTargetFor(type)}
+// Avant une modification du profil, on fige toutes les journées antérieures connues.
+const _saveSettingsV55=saveSettings.onclick;
+saveSettings.onclick=()=>{freezePastTargets();_saveSettingsV55()};
 
 selectedDate=localISO();renderToday();renderWeek();renderRecipes();renderProgress();renderSettings();
